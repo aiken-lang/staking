@@ -56,6 +56,12 @@ type State {
   stake_registration: PosixTime,
 }
 
+type OwnerCheck {
+  owner: Owner,
+  field1: Data,
+  field2: Data,
+}
+
 type NFTAsset {
   policy: PolicyId,
   asset: AssetName,
@@ -89,6 +95,7 @@ validator(state_token: NFTAsset) {
 
     let Address { payment_credential, .. } = in_address
 
+    // Some destructuring fields in the script context
     expect ScriptCredential(own_pkh) = payment_credential
 
     let State { owner, redelegation_condition, .. } = state
@@ -136,6 +143,7 @@ validator(state_token: NFTAsset) {
     // Check input contains parameterized NFT
     expect True = quantity_of(in_value, nft_policy, nft_asset) == 1
 
+    // Validates non-recursive conditions
     let tx_condition_runner =
       fn(cond: TxCondition) -> Bool {
         when cond is {
@@ -241,14 +249,16 @@ validator(state_token: NFTAsset) {
             ) == 1
           }
 
+        // State token is spent and spend validator will perform owner check
         if list.any(inputs, find_predicate) {
           True
         } else {
+          // Not spend so we must check for owner
           expect Some(Input { output: Output { datum, .. }, .. }) =
             list.find(reference_inputs, find_predicate)
 
           expect InlineDatum(datum) = datum
-          expect State { owner, .. }: State = datum
+          expect OwnerCheck { owner, .. }: OwnerCheck = datum
 
           // Checks current owner is valid
           when owner is {
@@ -478,12 +488,6 @@ fn validate_other_conditions(
       is_valid && validate_other_conditions(rest, input)
     }
   }
-}
-
-type OwnerCheck {
-  owner: Owner,
-  field1: Data,
-  field2: Data,
 }
 
 // Check each minted token name is in the expected list, has quantity of 1,

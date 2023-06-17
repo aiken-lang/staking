@@ -4,7 +4,7 @@ use aiken/transaction.{Mint, OutputReference, ScriptContext, Transaction}
 use aiken/transaction/value.{from_minted_value, tokens}
 
 validator(utxo_ref: OutputReference) {
-  fn oneshot(_rdr, ctx: ScriptContext) -> Bool {
+  fn oneshot(_rdr: Data, ctx: ScriptContext) -> Bool {
     let ScriptContext { transaction, purpose } = ctx
 
     expect Mint(own_policy) = purpose

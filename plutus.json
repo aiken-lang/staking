@@ -8,6 +8,25 @@
   },
   "validators": [
     {
+      "title": "one_shot.oneshot",
+      "redeemer": {
+        "title": "_rdr",
+        "schema": {
+          "$ref": "#/definitions/Data"
+        }
+      },
+      "parameters": [
+        {
+          "title": "utxo_ref",
+          "schema": {
+            "$ref": "#/definitions/aiken~1transaction~1OutputReference"
+          }
+        }
+      ],
+      "compiledCode": "5902470100003232323232323232323232322225333008323232323232323232323232323232533301b301e00213232533301953330193371e0049110a7374616b696e61746f720013370e00290010a50133323001001222533302000214a026464a66603c600600429444ccc01401400400cc09000cc0880080288cdd79980b180c000a400002a2940dd6980d8011bae30190011533018491334c6973742f5475706c652f436f6e73747220636f6e7461696e73206d6f7265206974656d73207468616e2065787065637465640016301c00132333232223232533301c3370e90010008a5eb7bdb1804c8dd59811800980d001180d000998018010009800800911299980e8010a6103d87a8000132323232533301d3371e00a002266e95200033022374c00497ae01333007007003005375c603c0066eacc078008c08400cc07c008004024cc8c88cc0080052201003001001222533301c00214bd6f7b630099191919299980e19b8f0050011003133021337606ea4004dd30011998038038018029bae301d0033756603a0046040006603c0040026eacc068004c068004c064004c060004c05c008dd6180a80098060029bae3013001300a533300c3370e9000180580088008a99806a492a4578706563746564206f6e20696e636f727265637420636f6e7374727563746f722076617269616e742e001630110013011002300f0013006001149858cc0040052000222233330073370e00200601a4666600a00a66e000112002300f001002002230063754002460086ea80055cd2b9c5573aaae7955cfaba05742ae89",
+      "hash": "724a3f3c152151c872dcca2eef4d089095b5c7a64f8f521669488852"
+    },
+    {
       "title": "stakinator3000.conditional_spend",
       "datum": {
         "title": "state",
@@ -120,6 +139,44 @@
           "fields": [
             {
               "$ref": "#/definitions/Data"
+            }
+          ]
+        }
+      ]
+    },
+    "aiken/transaction/OutputReference": {
+      "title": "OutputReference",
+      "description": "An `OutputReference` is a unique reference to an output on-chain. The `output_index`\n corresponds to the position in the output list of the transaction (identified by its id)\n that produced that output",
+      "anyOf": [
+        {
+          "title": "OutputReference",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "transaction_id",
+              "$ref": "#/definitions/aiken~1transaction~1TransactionId"
+            },
+            {
+              "title": "output_index",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        }
+      ]
+    },
+    "aiken/transaction/TransactionId": {
+      "title": "TransactionId",
+      "description": "A unique transaction identifier, as the hash of a transaction body. Note that the transaction id\n isn't a direct hash of the `Transaction` as visible on-chain. Rather, they correspond to hash\n digests of transaction body as they are serialized on the network.",
+      "anyOf": [
+        {
+          "title": "TransactionId",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "hash",
+              "$ref": "#/definitions/ByteArray"
             }
           ]
         }

@@ -4,8 +4,8 @@ use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list
 use aiken/time.{PosixTime}
 use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Publish, ScriptContext,
-  Spend, Transaction, WithdrawFrom,
+  DatumHash, InlineDatum, Input, Mint, Output, OutputReference, Publish,
+  ScriptContext, Spend, Transaction, WithdrawFrom,
 }
 use aiken/transaction/certificate.{
   CredentialDelegation, CredentialDeregistration, CredentialRegistration,
@@ -23,12 +23,13 @@ type Owner {
   Receipt(AssetName)
 }
 
-type InputCondition {
+type OutputCondition {
   HasAddress(Address)
   HasToken(PolicyId, AssetName, Int)
   HasDatum(Data)
   HasPkh(Credential)
   HasField { field_data: Data, field_path: List<Int> }
+  HasHash(ByteArray)
 }
 
 type TxCondition {
@@ -38,8 +39,9 @@ type TxCondition {
   /// Please note the `outer list` in InputsCondition could all be satisfied by a single input. 
   /// The checks are per all inputs not a unique input
   /// The `inner list` acts on a single input ensuring the input meets all conditions via &&
-  InputsCondition(List<List<InputCondition>>)
-  ReferenceInputsCondition(List<List<InputCondition>>)
+  InputsCondition(List<List<OutputCondition>>)
+  ReferenceInputsCondition(List<List<OutputCondition>>)
+  OutputsCondition(List<List<OutputCondition>>)
   StakesTo(PoolId)
 }
 
@@ -161,6 +163,9 @@ validator(state_token: NFTAsset) {
 
           ReferenceInputsCondition(ref_conditions) ->
             validate_inputs(ref_conditions, reference_inputs)
+
+          OutputsCondition(out_conditions) ->
+            validate_outputs(out_conditions, outputs)
 
           StakesTo(pool) -> {
             let expected_cert =
@@ -373,7 +378,7 @@ fn validate_stake_conditions(
 }
 
 fn validate_inputs(
-  input_conditions: List<List<InputCondition>>,
+  input_conditions: List<List<OutputCondition>>,
   inputs: List<Input>,
 ) -> Bool {
   when input_conditions is {
@@ -382,51 +387,80 @@ fn validate_inputs(
   }
 }
 
-fn has_valid_input(
-  input_conds: List<InputCondition>,
-  inputs: List<Input>,
+fn validate_outputs(
+  output_conditions: List<List<OutputCondition>>,
+  outputs: List<Output>,
 ) -> Bool {
-  when input_conds is {
+  when output_conditions is {
     [] -> True
-    [cond, ..rest_conds] -> {
-      let input_condition_runner =
-        when cond is {
-          HasAddress(address) ->
-            fn(input: Input) { input.output.address == address }
+    [x, ..xs] -> {
+      let combined_conditions = build_up_validation(x)
+      list.any(outputs, combined_conditions) && validate_outputs(xs, outputs)
+    }
+  }
+}
 
-          HasToken(t_policy, t_name, t_amount) ->
-            fn(input: Input) {
-              ( input.output.value |> quantity_of(t_policy, t_name) ) == t_amount
-            }
-          HasDatum(datum) -> {
-            let inline_datum = InlineDatum(datum)
-            fn(input: Input) { input.output.datum == inline_datum }
+fn build_up_validation(conds: List<OutputCondition>) -> fn(Output) -> Bool {
+  when conds is {
+    [] ->
+      fn(_output: Output) { True }
+    [cond, ..rest_conds] -> {
+      let inner_check = build_up_validation(rest_conds)
+
+      when cond is {
+        HasAddress(address) ->
+          fn(output: Output) {
+            output.address == address && inner_check(output)
           }
 
-          HasPkh(cred) ->
-            fn(input: Input) { input.output.address.payment_credential == cred }
-
-          HasField { field_data, field_path } ->
-            fn(input: Input) {
-              when input.output.datum is {
-                InlineDatum(dat) -> traverse_datum(dat, field_data, field_path)
-                _ -> False
-              }
-            }
+        HasToken(t_policy, t_name, t_amount) ->
+          fn(output: Output) {
+            ( output.value |> quantity_of(t_policy, t_name) ) == t_amount && inner_check(
+              output,
+            )
+          }
+        HasDatum(datum) -> {
+          let inline_datum = InlineDatum(datum)
+          fn(output: Output) {
+            output.datum == inline_datum && inner_check(output)
+          }
         }
 
-      let inputs_offset = find_input_offset(inputs, input_condition_runner)
+        HasPkh(cred) ->
+          fn(output: Output) {
+            output.address.payment_credential == cred && inner_check(output)
+          }
 
-      when inputs_offset is {
-        [] -> False
-        [input, ..rest_inputs] ->
-          validate_other_conditions(rest_conds, input) || has_valid_input(
-            input_conds,
-            rest_inputs,
-          )
+        HasField { field_data, field_path } ->
+          fn(output: Output) {
+            when output.datum is {
+              InlineDatum(dat) ->
+                traverse_datum(dat, field_data, field_path) && inner_check(
+                  output,
+                )
+              _ -> False
+            }
+          }
+        HasHash(datum_hash) -> {
+          let datum_hash = DatumHash(datum_hash)
+          fn(output: Output) {
+            output.datum == datum_hash && inner_check(output)
+          }
+        }
       }
     }
   }
+}
+
+fn has_valid_input(
+  input_conds: List<OutputCondition>,
+  inputs: List<Input>,
+) -> Bool {
+  let combined_conditions = build_up_validation(input_conds)
+  let input_condition_runner =
+    fn(input: Input) { combined_conditions(input.output) }
+
+  list.any(inputs, input_condition_runner)
 }
 
 fn traverse_datum(datum: Data, field: Data, field_path: List<Int>) -> Bool {
@@ -438,54 +472,6 @@ fn traverse_datum(datum: Data, field: Data, field_path: List<Int>) -> Bool {
         None -> False
         Some(x) -> traverse_datum(x, field, rest_path)
       }
-    }
-  }
-}
-
-fn find_input_offset(
-  inputs: List<Input>,
-  with: fn(Input) -> Bool,
-) -> List<Input> {
-  when inputs is {
-    [] ->
-      []
-    [input, ..rest] ->
-      if with(input) {
-        inputs
-      } else {
-        find_input_offset(rest, with)
-      }
-  }
-}
-
-fn validate_other_conditions(
-  input_conds: List<InputCondition>,
-  input: Input,
-) -> Bool {
-  when input_conds is {
-    [] -> True
-    [cond, ..rest] -> {
-      let is_valid =
-        when cond is {
-          HasAddress(address) -> input.output.address == address
-
-          HasToken(t_policy, t_name, t_amount) ->
-            ( input.output.value |> quantity_of(t_policy, t_name) ) == t_amount
-          HasDatum(datum) -> {
-            let inline_datum = InlineDatum(datum)
-            input.output.datum == inline_datum
-          }
-
-          HasPkh(cred) -> input.output.address.payment_credential == cred
-
-          HasField { field_data, field_path } ->
-            when input.output.datum is {
-              InlineDatum(dat) -> traverse_datum(dat, field_data, field_path)
-              _ -> False
-            }
-        }
-
-      is_valid && validate_other_conditions(rest, input)
     }
   }
 }

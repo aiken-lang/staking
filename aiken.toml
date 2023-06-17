@@ -1,0 +1,14 @@
+name = "aiken-lang/staking"
+version = "0.0.0"
+license = "Apache-2.0"
+description = "Aiken contracts for project 'aiken-lang/staking'"
+
+[repository]
+user = "aiken-lang"
+project = "staking"
+platform = "github"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "main"
+source = "github"

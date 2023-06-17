@@ -35,6 +35,9 @@ type TxCondition {
   Mints(PolicyId, AssetName, Int)
   IsAfter(PosixTime)
   IsBefore(PosixTime)
+  // Please note the `outer list` in InputsCondition could all be satisfied by a single input. 
+  // The checks are per all inputs not a unique input
+  // The `inner list` acts on a single input ensuring the input meets all conditions via &&
   InputsCondition(List<List<InputCondition>>)
   ReferenceInputsCondition(List<List<InputCondition>>)
   StakesTo(PoolId)

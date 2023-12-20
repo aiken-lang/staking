@@ -64,11 +64,6 @@ type OwnerCheck {
   field2: Data,
 }
 
-type NFTAsset {
-  policy: PolicyId,
-  asset: AssetName,
-}
-
 validator(init_input: OutputReference) {
   /// remember `rdr` still needs to be wrapped in a index 1 constr for multivalidator purposes
   fn conditional_spend(state: State, rdr: Data, ctx: ScriptContext) -> Bool {

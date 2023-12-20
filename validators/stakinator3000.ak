@@ -69,7 +69,7 @@ type NFTAsset {
   asset: AssetName,
 }
 
-validator(state_token: NFTAsset) {
+validator(init_input: OutputReference) {
   /// remember `rdr` still needs to be wrapped in a index 1 constr for multivalidator purposes
   fn conditional_spend(state: State, rdr: Data, ctx: ScriptContext) -> Bool {
     let ScriptContext { transaction, purpose } = ctx
@@ -102,8 +102,6 @@ validator(state_token: NFTAsset) {
 
     let State { owner, redelegation_condition, .. } = state
 
-    let NFTAsset { policy: nft_policy, asset: nft_asset } = state_token
-
     let Interval { lower_bound, upper_bound } = validity_range
 
     let IntervalBound { bound_type, is_inclusive: upper_inclusive } =
@@ -117,7 +115,7 @@ validator(state_token: NFTAsset) {
     expect Finite(lower) = bound_type
 
     // Checks current owner is valid
-    expect True =
+    expect
       when owner is {
         // An owner can be a public key, a spent NFT, or a burned receipt token that was minted by this script
         PKH(signer) -> list.has(extra_signatories, signer)
@@ -125,26 +123,20 @@ validator(state_token: NFTAsset) {
         // that we check is spent
         NFT(policy, token_name) -> {
           expect nft_input_owner: OutputReference = rdr
-
           expect Some(nft_input) =
             list.find(
               inputs,
               fn(input) { input.output_reference == nft_input_owner },
             )
-
           quantity_of(nft_input.output.value, policy, token_name) == 1
         }
-
         Receipt(token_name) -> {
           let x = mint |> from_minted_value |> quantity_of(own_pkh, token_name)
-
           x == -1
         }
       }
-
-    // Check input contains parameterized NFT
-    expect True = quantity_of(in_value, nft_policy, nft_asset) == 1
-
+    // Check input contains init NFT
+    expect quantity_of(in_value, own_pkh, "") == 1
     // Validates non-recursive conditions
     let tx_condition_runner =
       fn(cond: TxCondition) -> Bool {
@@ -178,7 +170,7 @@ validator(state_token: NFTAsset) {
         }
       }
 
-    expect True =
+    expect
       when redelegation_condition is {
         Is(tx_cond) -> tx_condition_runner(tx_cond)
         Not(tx_cond) -> !tx_condition_runner(tx_cond)
@@ -187,17 +179,12 @@ validator(state_token: NFTAsset) {
         Or(conds) ->
           validate_stake_conditions(conds, False, tx_condition_runner)
       }
-
     // find output with same address and nft state token
     expect Some(Output { datum: InlineDatum(out_datum), .. }) =
       list.find(
         outputs,
         fn(output) {
-          output.address == in_address && quantity_of(
-            output.value,
-            nft_policy,
-            nft_asset,
-          ) == 1
+          output.address == in_address && quantity_of(output.value, own_pkh, "") == 1
         },
       )
 
@@ -222,35 +209,67 @@ validator(state_token: NFTAsset) {
       ..
     } = transaction
 
-    let NFTAsset { policy: nft_policy, asset: nft_asset } = state_token
-
     when purpose is {
       Mint(own_policy) -> {
+        let minted_under_policy =
+          mint
+            |> from_minted_value
+            |> tokens(own_policy)
+            |> dict.to_list
+
         expect [first_input, ..] = inputs
 
-        let asset_name = first_input.output_reference |> builtin.serialise_data
+        let asset_name =
+          first_input.output_reference
+            |> builtin.serialise_data
+            |> builtin.blake2b_256
 
-        mint
-          |> from_minted_value
-          |> tokens(own_policy)
-          |> dict.to_list
-          |> check_mint_to_output_datum(
-               outputs,
-               asset_name,
-               state_token,
-               ScriptCredential(own_policy),
-             )
+        when minted_under_policy is {
+          // impossible case
+          [] -> False
+          [(minted_asset_name, 1), ..rest] if minted_asset_name == "" -> {
+            expect [output, ..] = outputs
+
+            let Output { address, value, .. } = output
+
+            and {
+              address.payment_credential == ScriptCredential(own_policy),
+              value.quantity_of(value, own_policy, "") == 1,
+              list.any(
+                inputs,
+                fn(input) { input.output_reference == init_input },
+              ),
+              check_mint_to_output_datum(
+                rest,
+                outputs,
+                asset_name,
+                ScriptCredential(own_policy),
+                own_policy,
+              ),
+            }
+          }
+
+          all ->
+            check_mint_to_output_datum(
+              all,
+              outputs,
+              asset_name,
+              ScriptCredential(own_policy),
+              own_policy,
+            )
+        }
       }
 
       WithdrawFrom(cred) -> {
         expect Inline(cred) = cred
+        expect ScriptCredential(own_policy) = cred
 
         let find_predicate =
           fn(input: Input) {
             let output = input.output
 
             output.address.payment_credential == cred && (
-              output.value |> quantity_of(nft_policy, nft_asset)
+              output.value |> quantity_of(own_policy, "")
             ) == 1
           }
 
@@ -308,6 +327,7 @@ validator(state_token: NFTAsset) {
             delegator,
           } -> {
             expect Inline(cred) = delegator
+            expect ScriptCredential(own_policy) = cred
             // Checks for state token is spent
             list.any(
               inputs,
@@ -315,13 +335,11 @@ validator(state_token: NFTAsset) {
                 let output = input.output
 
                 output.address.payment_credential == cred && (
-                  output.value |> quantity_of(nft_policy, nft_asset)
+                  output.value |> quantity_of(own_policy, "")
                 ) == 1
               },
             )
           }
-
-          CredentialRegistration(_) -> True
           _ -> False
         }
       _ -> False
@@ -484,25 +502,22 @@ fn check_mint_to_output_datum(
   minted_assets: List<(ByteArray, Int)>,
   outputs: List<Output>,
   expected_asset: ByteArray,
-  expected_nft: NFTAsset,
-  validator_cred: PaymentCredential,
+  validator_cred: Credential,
+  validator_policy: PolicyId,
 ) -> Bool {
   when minted_assets is {
     [] -> True
     [(minted_asset_name, quantity), ..rest_assets] ->
       if quantity == 1 {
-        expect True = expected_asset == minted_asset_name
-
-        expect True =
+        expect expected_asset == minted_asset_name
+        expect
           list.any(
             outputs,
             fn(output) {
               let Output { address, value, datum, .. } = output
-
               if address.payment_credential == validator_cred {
                 // Check for nft present
-                let NFTAsset { policy, asset } = expected_nft
-                if quantity_of(value, policy, asset) == 1 {
+                if quantity_of(value, validator_policy, "") == 1 {
                   // Check for receipt datum for minted receipt token
                   expect InlineDatum(data) = datum
                   expect OwnerCheck { owner: Receipt(asset), .. }: OwnerCheck =
@@ -516,21 +531,20 @@ fn check_mint_to_output_datum(
               }
             },
           )
-
         check_mint_to_output_datum(
           rest_assets,
           outputs,
           expected_asset,
-          expected_nft,
           validator_cred,
+          validator_policy,
         )
       } else if quantity == -1 {
         check_mint_to_output_datum(
           rest_assets,
           outputs,
           expected_asset,
-          expected_nft,
           validator_cred,
+          validator_policy,
         )
       } else {
         False

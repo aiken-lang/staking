@@ -27,7 +27,7 @@ type OutputCondition {
   HasAddress(Address)
   HasToken(PolicyId, AssetName, Int)
   HasDatum(Data)
-  HasPkh(Credential)
+  HasPC(Credential)
   HasField { field_data: Data, field_path: List<Int> }
   HasHash(ByteArray)
 }
@@ -454,7 +454,7 @@ fn build_up_validation(conds: List<OutputCondition>) -> fn(Output) -> Bool {
           }
         }
 
-        HasPkh(cred) ->
+        HasPC(cred) ->
           fn(output: Output) {
             output.address.payment_credential == cred && inner_check(output)
           }

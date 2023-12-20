@@ -8,10 +8,10 @@ use aiken/transaction.{
   ScriptContext, Spend, Transaction, WithdrawFrom,
 }
 use aiken/transaction/certificate.{
-  CredentialDelegation, CredentialDeregistration, CredentialRegistration,
+  CredentialDelegation, CredentialDeregistration,
 }
 use aiken/transaction/credential.{
-  Address, Credential, Inline, PaymentCredential, PoolId, ScriptCredential,
+  Address, Credential, Inline, PoolId, ScriptCredential,
 }
 use aiken/transaction/value.{
   AssetName, PolicyId, from_minted_value, quantity_of, tokens,
@@ -98,7 +98,7 @@ validator(init_input: OutputReference) {
     let Address { payment_credential, .. } = in_address
 
     // Some destructuring fields in the script context
-    expect ScriptCredential(own_pkh) = payment_credential
+    expect ScriptCredential(own_policy) = payment_credential
 
     let State { owner, redelegation_condition, .. } = state
 
@@ -131,12 +131,13 @@ validator(init_input: OutputReference) {
           quantity_of(nft_input.output.value, policy, token_name) == 1
         }
         Receipt(token_name) -> {
-          let x = mint |> from_minted_value |> quantity_of(own_pkh, token_name)
+          let x =
+            mint |> from_minted_value |> quantity_of(own_policy, token_name)
           x == -1
         }
       }
     // Check input contains init NFT
-    expect quantity_of(in_value, own_pkh, "") == 1
+    expect quantity_of(in_value, own_policy, "") == 1
     // Validates non-recursive conditions
     let tx_condition_runner =
       fn(cond: TxCondition) -> Bool {
@@ -162,7 +163,7 @@ validator(init_input: OutputReference) {
           StakesTo(pool) -> {
             let expected_cert =
               CredentialDelegation {
-                delegator: Inline(ScriptCredential(own_pkh)),
+                delegator: Inline(ScriptCredential(own_policy)),
                 delegatee: pool,
               }
             list.any(certificates, fn(cert) { expected_cert == cert })
@@ -184,7 +185,11 @@ validator(init_input: OutputReference) {
       list.find(
         outputs,
         fn(output) {
-          output.address == in_address && quantity_of(output.value, own_pkh, "") == 1
+          output.address == in_address && quantity_of(
+            output.value,
+            own_policy,
+            "",
+          ) == 1
         },
       )
 

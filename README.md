@@ -1,55 +1,24 @@
-# staking
+# Staking
 
-Write validators in the `validators` folder, and supporting functions in the `lib` folder using `.ak` as a file extension.
+This repository contains the `staker` stake validator. The validator supports
+the following actions:
 
-For example, as `validators/always_true.ak`
+- `Initialize`: This action is used to initialize the staking process. This
+  mints a one time NFT that has an empty token name to store with the staking
+  state datum. This allows the minting of one receipt token.
+- `Delegate`: This action allows a user to delegate their stake to a validator.
+  This requires spending the token created in initialize and satisfying the
+  datum condition in addition to being the datum owner. This allows for the
+  minting of one receipt token.
+- `Withdraw`: This action allows a user to withdraw their stake from a
+  validator. The use can prove they are the owner either by spending the init
+  NFT or referencing it and proving being the datum owner.
+- `Close`: This action is used to close the staking process. This requires
+  spending the token created in initialize and satisfying the datum condition in
+  addition to being the datum owner.
 
-```gleam
-validator {
-  fn spend(_datum: Data, _redeemer: Data, _context: Data) -> Bool {
-    True
-  }
-}
-```
+This validator has no redeemers and uses the existence or lack of existence of
+mints, inputs, delegation, and withdraws to validate various actions.
 
-## Building
-
-```sh
-aiken build
-```
-
-## Testing
-
-You can write tests in any module using the `test` keyword. For example:
-
-```gleam
-test foo() {
-  1 + 1 == 2
-}
-```
-
-To run all tests, simply do:
-
-```sh
-aiken check
-```
-
-To run only tests matching the string `foo`, do:
-
-```sh
-aiken check -m foo
-```
-
-## Documentation
-
-If you're writing a library, you might want to generate an HTML documentation for it.
-
-Use:
-
-```sh
-aiken docs
-```
-
-## Resources
-
-Find more on the [Aiken's user manual](https://aiken-lang.org).
+For more details on how these actions work, please refer to the `staker.ak` file
+in the `validators` directory.

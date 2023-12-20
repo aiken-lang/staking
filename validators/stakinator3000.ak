@@ -180,26 +180,36 @@ validator(init_input: OutputReference) {
         Or(conds) ->
           validate_stake_conditions(conds, False, tx_condition_runner)
       }
-    // find output with same address and nft state token
-    expect Some(Output { datum: InlineDatum(out_datum), .. }) =
-      list.find(
-        outputs,
-        fn(output) {
-          output.address == in_address && quantity_of(
-            output.value,
-            own_policy,
-            "",
-          ) == 1
-        },
-      )
 
-    // Ensure output stake registration shows right time.
-    expect State { stake_registration, .. }: State = out_datum
+    or {
+      // This allows you to decommission the validator
+      mint
+        |> from_minted_value
+        |> quantity_of(own_policy, "")
+        |> fn(a) { a == -1 },
+      // find output with same address and nft state token
+      {
+        expect Some(Output { datum: InlineDatum(out_datum), .. }) =
+          list.find(
+            outputs,
+            fn(output) {
+              output.address == in_address && quantity_of(
+                output.value,
+                own_policy,
+                "",
+              ) == 1
+            },
+          )
 
-    // Confusing enough we get milliseconds from the node instead of slot time. So time is in milliseconds
-    let time_range = ( upper - lower ) / 2 / 1000
-    // I'm converting to seconds for simplicity
-    stake_registration == lower + time_range && time_range >= 180
+        // Ensure output stake registration shows right time.
+        expect State { stake_registration, .. }: State = out_datum
+
+        // Confusing enough we get milliseconds from the node instead of slot time. So time is in milliseconds
+        let time_range = ( upper - lower ) / 2000
+        // I'm converting to seconds for simplicity
+        stake_registration == lower + time_range && time_range >= 180
+      },
+    }
   }
 
   fn conditional_multi(rdr: Data, ctx: ScriptContext) -> Bool {
